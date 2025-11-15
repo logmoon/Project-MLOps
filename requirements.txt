@@ -7,3 +7,8 @@ mlflow
 fastapi
 uvicorn
 joblib
+seaborn
+flake8
+black
+bandit
+pytest
