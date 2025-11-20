@@ -146,6 +146,8 @@ def evaluate_model(model, X_test, y_test):
     # Predict on test set
     y_pred = model.predict(X_test)
 
+    print(type(X_test))
+
     # Calculate accuracy on ALL test data
     accuracy = accuracy_score(y_test, y_pred)
     print(f"Accuracy: {accuracy:.4f}")
