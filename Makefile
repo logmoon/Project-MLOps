@@ -27,6 +27,7 @@ help:
 	@echo ""
 	@echo "Utilities:"
 	@echo "  make test         - Run tests with pytest"
+	@echo "  make api          - Start FastAPI server and UI for testing"
 	@echo "  make clean        - Clean generated files and cache"
 	@echo "  make all          - Run complete CI/CD pipeline"
 	@echo ""
@@ -87,6 +88,12 @@ test:
 	else \
 		echo "No tests directory found. Skipping tests."; \
 	fi
+
+# Run API for testing
+api:
+	@echo "🌐 Starting FastAPI server for testing..."
+	uvicorn app:app --reload --host 0.0.0.0 --port 8000
+
 
 # Clean generated files
 clean:

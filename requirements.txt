@@ -5,6 +5,7 @@ matplotlib
 jupyter
 mlflow
 fastapi
+python-multipart
 uvicorn
 joblib
 seaborn

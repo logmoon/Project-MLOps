@@ -1,51 +1,103 @@
-import numpy as np
-from model_pipeline import (
-    load_model,
-)
-from typing import List
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+import os
+from model_pipeline import prepare_data, split_and_scale_data, train_model, save_model, load_model
 
 app = FastAPI()
+templates = Jinja2Templates(directory=".")
 
-class PredictionFeatures(BaseModel):
-    ph: float
-    hardness: float
-    solids: float
-    chloramines: float
-    sulfate: float
-    conductivity: float
-    organic_carbon: float
-    trihalomethanes: float
-    turbidity: float
+# Cache the model and scaler, load em at startup
+model, scaler = load_model()
 
-# Cache the model
-model, scaler = load_model() # From default path
+# Features list
+FEATURES = ["ph","hardness","solids","chloramines","sulfate","conductivity","organic_carbon","trihalomethanes","turbidity"]
 
-@app.post('/predict')
-def predict(input: PredictionFeatures):
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "features": FEATURES,
+        "values": {},
+        "prediction": None,
+        "message": None
+    })
+
+@app.post("/predict", response_class=HTMLResponse)
+async def predict(
+    request: Request,
+    ph: float = Form(...),
+    hardness: float = Form(...),
+    solids: float = Form(...),
+    chloramines: float = Form(...),
+    sulfate: float = Form(...),
+    conductivity: float = Form(...),
+    organic_carbon: float = Form(...),
+    trihalomethanes: float = Form(...),
+    turbidity: float = Form(...)
+):
+    values = {
+        "ph": ph,
+        "hardness": hardness,
+        "solids": solids,
+        "chloramines": chloramines,
+        "sulfate": sulfate,
+        "conductivity": conductivity,
+        "organic_carbon": organic_carbon,
+        "trihalomethanes": trihalomethanes,
+        "turbidity": turbidity,
+    }
     try:
-        ratio = input.hardness / (input.solids + 1)
-        features = [
-            input.ph,
-            input.hardness,
-            input.solids,
-            input.chloramines,
-            input.sulfate,
-            input.conductivity,
-            input.organic_carbon,
-            input.trihalomethanes,
-            input.turbidity,
-            ratio
-        ]
-
-        # Convert to 2D array
-        X = np.array([features])
-
-        # Scale
-        X_scaled = scaler.transform(X)
-
-        prediction = model.predict(X_scaled)
-        return { "message": "Success", "prediction": int(prediction[0]) }
+        features = [values[f] for f in FEATURES]
+        features.append(hardness / (solids + 1)) # Add in `hardness_solids_ratio`
+        prediction_raw = model.predict([features])[0]
+        prediction = "Potable" if prediction_raw == 1 else "Not Potable"
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        prediction = f"Error: {str(e)}"
+
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "features": FEATURES,
+        "values": values,
+        "prediction": prediction,
+        "message": None
+    })
+
+@app.post("/retrain", response_class=HTMLResponse)
+async def retrain(
+    request: Request,
+    file: UploadFile = File(...),
+    test_size: float = Form(0.2),
+    random_state: int = Form(42)
+):
+    temp_path = f"temp_{file.filename}"
+    try:
+        contents = file.file.read()
+        with open(temp_path, "wb") as f:
+            f.write(contents)
+
+        df = prepare_data(temp_path)
+        X_train, X_test, y_train, y_test, new_scaler = split_and_scale_data(df, test_size, random_state)
+        new_model = train_model(X_train, y_train)
+        save_model(new_model, new_scaler)
+
+        global model, scaler
+        model = new_model
+        scaler = new_scaler
+
+        message = f"Model retrained and saved successfully from {file.filename}!"
+    except Exception as e:
+        message = f"Retrain failed: {str(e)}"
+    finally:
+        file.file.close()
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "features": FEATURES,
+        "values": {},
+        "prediction": None,
+        "message": message
+    })
+
