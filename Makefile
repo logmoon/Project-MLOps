@@ -28,6 +28,7 @@ help:
 	@echo "Utilities:"
 	@echo "  make test         - Run tests with pytest"
 	@echo "  make api          - Start FastAPI server and UI for testing"
+	@echo "  make mlflow-ui    - Starts MLflow UI"
 	@echo "  make clean        - Clean generated files and cache"
 	@echo "  make all          - Run complete CI/CD pipeline"
 	@echo ""
@@ -92,7 +93,12 @@ test:
 # Run API for testing
 api:
 	@echo "🌐 Starting FastAPI server for testing..."
-	uvicorn app:app --reload --host 0.0.0.0 --port 8000
+	uvicorn app:app --reload --host 0.0.0.0 --port 8888
+
+# Start the MLflow ui
+mlflow-ui:
+	@echo "🌐 Starting MLflow UI"
+	mlflow ui --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5555 &
 
 
 # Clean generated files

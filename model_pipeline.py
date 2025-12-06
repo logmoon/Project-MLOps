@@ -9,64 +9,105 @@ import pandas as pd
 from sklearn.naive_bayes import GaussianNB
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
 import joblib
 import os
+import mlflow
+import mlflow.sklearn
+import time
+import json
+import matplotlib.pyplot as plt
+import numpy as np
 
+# Configure MLflow to use SQLite instead of filesystem store
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
 
-def prepare_data(dataset_path):
+def prepare_data(dataset_path, 
+                 missing_value_strategy="median",
+                 engineer_features=True,
+                 outlier_method="IQR",
+                 outlier_threshold=1.5,
+                 outlier_columns=None):
     """
     Load and preprocess the water potability dataset.
 
     Performs the following steps:
     1. Loads CSV data
-    2. Fills missing values with column medians
-    3. Engineers hardness_solids_ratio feature
-    4. Caps outliers for Sulfate, pH, Hardness, and hardness_solids_ratio
+    2. Fills missing values based on strategy
+    3. Engineers features (optional)
+    4. Caps outliers based on method and threshold
 
     Args:
         dataset_path (str): Path to the water potability CSV file
+        missing_value_strategy (str): Strategy for handling missing values - "median", "mean", or "drop"
+        engineer_features (bool): Whether to create engineered features
+        outlier_method (str): Method for outlier detection - "IQR" or "zscore"
+        outlier_threshold (float): Threshold for outlier capping (1.5 for IQR, 3.0 for z-score typically)
+        outlier_columns (list): Specific columns to cap outliers. If None, uses default set.
 
     Returns:
-        pd.DataFrame: Processed dataframe with engineered features and capped outliers
+        tuple: (pd.DataFrame, list) - Processed dataframe and list of engineered feature names
     """
-    print("\n")  # Add some space
+    print("\n")
     print("Reading dataset")
     df = pd.read_csv(dataset_path)
     print("Processing dataset")
-    # Fill null with medians (seems to have done the best job)
-    df.fillna(df.median(), inplace=True)
+    
+    # Handle missing values
+    print(f"Handling missing values with strategy: {missing_value_strategy}")
+    if missing_value_strategy == "median":
+        df.fillna(df.median(), inplace=True)
+    elif missing_value_strategy == "mean":
+        df.fillna(df.mean(), inplace=True)
+    elif missing_value_strategy == "drop":
+        df.dropna(inplace=True)
+    else:
+        raise ValueError(f"Unknown missing value strategy: {missing_value_strategy}")
 
-    # Features engineering, this one seems to have given the best results
-    df["hardness_solids_ratio"] = df["Hardness"] / (
-        df["Solids"] + 1
-    )  # +1 to avoid division by zero
+    # Feature engineering
+    engineered_features = []
+    if engineer_features:
+        print("Engineering features")
+        df["hardness_solids_ratio"] = df["Hardness"] / (df["Solids"] + 1)
+        engineered_features.append("hardness_solids_ratio")
 
-    # Caps outliers, simple
-    def cap_outliers(column):
-        """
-        Cap outliers using the IQR method.
-
-        Args:
-            column (pd.Series): Column to cap outliers
-
-        Returns:
-            pd.Series: Column with outliers capped at 1.5*IQR bounds
-        """
+    # Cap outliers
+    def cap_outliers_iqr(column, threshold=1.5):
+        """Cap outliers using the IQR method."""
         Q1 = column.quantile(0.25)
         Q3 = column.quantile(0.75)
         IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
+        lower_bound = Q1 - threshold * IQR
+        upper_bound = Q3 + threshold * IQR
+        return column.clip(lower=lower_bound, upper=upper_bound)
+    
+    def cap_outliers_zscore(column, threshold=3.0):
+        """Cap outliers using the z-score method."""
+        mean = column.mean()
+        std = column.std()
+        lower_bound = mean - threshold * std
+        upper_bound = mean + threshold * std
         return column.clip(lower=lower_bound, upper=upper_bound)
 
-    # Apply to problematic features
-    df["Sulfate"] = cap_outliers(df["Sulfate"])
-    df["ph"] = cap_outliers(df["ph"])
-    df["Hardness"] = cap_outliers(df["Hardness"])
-    df["hardness_solids_ratio"] = cap_outliers(df["hardness_solids_ratio"])
+    # Determine which columns to process
+    if outlier_columns is None:
+        outlier_columns = ["Sulfate", "ph", "Hardness"]
+        if engineer_features:
+            outlier_columns.append("hardness_solids_ratio")
+    
+    # Apply outlier capping
+    if outlier_method and outlier_columns:
+        print(f"Capping outliers using {outlier_method} method (threshold={outlier_threshold})")
+        for col in outlier_columns:
+            if col in df.columns:
+                if outlier_method == "IQR":
+                    df[col] = cap_outliers_iqr(df[col], threshold=outlier_threshold)
+                elif outlier_method == "zscore":
+                    df[col] = cap_outliers_zscore(df[col], threshold=outlier_threshold)
+                else:
+                    raise ValueError(f"Unknown outlier method: {outlier_method}")
 
-    return df
+    return df, engineered_features
 
 
 def split_and_scale_data(df, test_size=0.2, random_state=42):
@@ -80,19 +121,12 @@ def split_and_scale_data(df, test_size=0.2, random_state=42):
 
     Returns:
         tuple: (X_train_scaled, X_test_scaled, y_train, y_test, scaler)
-            - X_train_scaled (np.ndarray): Scaled training features
-            - X_test_scaled (np.ndarray): Scaled test features
-            - y_train (pd.Series): Training labels
-            - y_test (pd.Series): Test labels
-            - scaler (StandardScaler): Fitted scaler object
     """
-    print("\n")  # Add some space
+    print("\n")
     print("Splitting data...")
-    # Separate features and target
     X = df.drop("Potability", axis=1)
     y = df["Potability"]
 
-    # Split into train/test
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=y
     )
@@ -106,33 +140,145 @@ def split_and_scale_data(df, test_size=0.2, random_state=42):
     return X_train_scaled, X_test_scaled, y_train, y_test, scaler
 
 
-def train_model(X_train, y_train):
+def train_and_log(
+    X_train, y_train, X_test, y_test, scaler,
+    dataset_path="water_potability.csv", 
+    experiment_name="water_potability",
+    test_size=0.2, 
+    random_state=42,
+    # Data Preprocessing Parameters
+    engineered_features=None, 
+    outlier_method="IQR", 
+    outlier_threshold=1.5, 
+    missing_value_strategy="median",
+    # Model Hyperparameters
+    var_smoothing=1e-9,
+    # Metadata
+    run_source="cli"
+):
     """
-    Train a Gaussian Naive Bayes classifier.
+    Train model and log params/metrics/artifacts to MLflow.
 
     Args:
-        X_train (np.ndarray): Scaled training features
-        y_train (pd.Series): Training labels (0: Not Potable, 1: Potable)
+        run_source (str): Source of the run - "cli", "api", "notebook", etc.
 
-    Returns:
-        GaussianNB: Trained Naive Bayes model
+    Returns: trained model, run_id
     """
-    print("\n")  # Add some space
-    print("Creating model")
-    model = GaussianNB()
-    print("Training Model")
-    model.fit(X_train, y_train)
-    return model
+    if engineered_features is None:
+        engineered_features = []
+        
+    mlflow.set_experiment(experiment_name)
+    with mlflow.start_run() as run:
+        run_id = run.info.run_id
+        
+        # Set tags for organization and filtering
+        mlflow.set_tag("source", run_source)
+        mlflow.set_tag("model_type", "GaussianNB")
+        mlflow.set_tag("created_by", "train_and_log")
+
+        # Log data parameters
+        mlflow.log_param("data.dataset", dataset_path)
+        mlflow.log_param("data.test_size", test_size)
+        mlflow.log_param("data.random_state", random_state)
+        mlflow.log_param("data.scaler", type(scaler).__name__)
+
+        # Log preprocessing parameters
+        mlflow.log_param("prep.missing_value_strategy", missing_value_strategy)
+        mlflow.log_param("prep.engineer_features", len(engineered_features) > 0)
+        mlflow.log_param("prep.engineered_features", ",".join(engineered_features) if engineered_features else "none")
+        mlflow.log_param("prep.outlier_method", outlier_method if outlier_method else "none")
+        mlflow.log_param("prep.outlier_threshold", outlier_threshold)
+        
+        # Log model hyperparameters
+        mlflow.log_param("model.algorithm", "GaussianNB")
+        mlflow.log_param("model.var_smoothing", var_smoothing)
+        mlflow.log_param("timestamp", int(time.time()))
+
+        # Train
+        print("Creating model")
+        model = GaussianNB(var_smoothing=var_smoothing)
+        print("Training Model")
+        model.fit(X_train, y_train)
+
+        # Predict and log metrics
+        y_pred = model.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        mlflow.log_metric("accuracy", float(acc))
+        mlflow.log_metric("precision", precision_score(y_test, y_pred))
+        mlflow.log_metric("recall", recall_score(y_test, y_pred))
+        mlflow.log_metric("f1", f1_score(y_test, y_pred))
+
+        # Log confusion matrix as image
+        fig, ax = plt.subplots()
+        ConfusionMatrixDisplay.from_predictions(y_test, y_pred, ax=ax, display_labels=["Not Potable","Potable"])
+        fig.tight_layout()
+        cm_path = f"confusion_matrix_{run_id}.png"
+        fig.savefig(cm_path)
+        plt.close(fig)
+        mlflow.log_artifact(cm_path)
+        try:
+            os.remove(cm_path)
+        except Exception:
+            pass
+
+        # Log model as MLflow model
+        mlflow.sklearn.log_model(
+            model, 
+            artifact_path="model",
+            input_example=X_train[:1],
+        )
+        
+        # Register to model registry
+        model_uri = f"runs:/{run_id}/model"
+        registered_name = "water_potability_model"
+        try:
+            result = mlflow.register_model(model_uri, registered_name)
+            client = mlflow.tracking.MlflowClient()
+            # Add version tags
+            client.set_model_version_tag(
+                name=registered_name,
+                version=result.version,
+                key="source",
+                value=run_source
+            )
+            print(f"Registered model: {result.name}, version: {result.version}")
+        except Exception as e:
+            print("Model registration failed or registry not available:", e)
+
+        # Keep joblib artifacts too
+        joblib_model_path = f"naive_bayes_{run_id}.pkl"
+        joblib.dump(model, joblib_model_path)
+        mlflow.log_artifact(joblib_model_path, artifact_path="artifacts")
+        try:
+            os.remove(joblib_model_path)
+        except Exception:
+            pass
+
+        # Log scaler
+        scaler_path = f"scaler_{run_id}.pkl"
+        joblib.dump(scaler, scaler_path)
+        mlflow.log_artifact(scaler_path, artifact_path="artifacts")
+        try:
+            os.remove(scaler_path)
+        except Exception:
+            pass
+
+        meta = {"run_id": run_id, "accuracy": acc}
+        meta_path = f"meta_{run_id}.json"
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+        mlflow.log_artifact(meta_path, artifact_path="artifacts")
+        try:
+            os.remove(meta_path)
+        except Exception:
+            pass
+
+    return model, run_id
 
 
 def evaluate_model(model, X_test, y_test):
     """
     Evaluate model performance on test set.
-
-    Prints:
-    - Overall accuracy
-    - Classification report (precision, recall, f1-score per class)
-    - Confusion matrix with breakdown
 
     Args:
         model (GaussianNB): Trained model
@@ -142,23 +288,25 @@ def evaluate_model(model, X_test, y_test):
     Returns:
         float: Model accuracy score
     """
-    print("\n")  # Add some space
-    # Predict on test set
+    print("\n")
     y_pred = model.predict(X_test)
 
     print(type(X_test))
 
-    # Calculate accuracy on ALL test data
     accuracy = accuracy_score(y_test, y_pred)
+    percesion = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
     print(f"Accuracy: {accuracy:.4f}")
+    print(f"Precision: {percesion:.4f}")
+    print(f"Recall: {recall:.4f}")
+    print(f"F1 Score: {f1:.4f}")
 
-    # Detailed metrics
     print("\nClassification Report:")
     print(
         classification_report(y_test, y_pred, target_names=["Not Potable", "Potable"])
     )
 
-    # Confusion matrix
     print("\nConfusion Matrix:")
     cm = confusion_matrix(y_test, y_pred)
     print(cm)
@@ -170,7 +318,6 @@ def evaluate_model(model, X_test, y_test):
 
     return accuracy
 
-
 def save_model(
     model,
     scaler,
@@ -180,23 +327,19 @@ def save_model(
     """
     Save trained model and scaler to disk using joblib.
 
-    Creates necessary directories if they don't exist.
-
     Args:
         model (GaussianNB): Trained model to save
         scaler (StandardScaler): Fitted scaler to save
-        model_path (str): Path to save model file (default: 'models/naive_bayes_model.pkl')
-        scaler_path (str): Path to save scaler file (default: 'models/scaler.pkl')
+        model_path (str): Path to save model file
+        scaler_path (str): Path to save scaler file
 
     Returns:
         None
     """
-    print("\n")  # Add some space
-    # Make sure directories exist
+    print("\n")
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     os.makedirs(os.path.dirname(scaler_path), exist_ok=True)
 
-    # Save
     print("Saving model and scaler...")
     joblib.dump(model, model_path)
     joblib.dump(scaler, scaler_path)
@@ -211,15 +354,13 @@ def load_model(
     Load saved model and scaler from disk.
 
     Args:
-        model_path (str): Path to saved model file (default: 'models/naive_bayes_model.pkl')
-        scaler_path (str): Path to saved scaler file (default: 'models/scaler.pkl')
+        model_path (str): Path to saved model file
+        scaler_path (str): Path to saved scaler file
 
     Returns:
         tuple: (model, scaler)
-            - model (GaussianNB): Loaded trained model
-            - scaler (StandardScaler): Loaded fitted scaler
     """
-    print("\n")  # Add some space
+    print("\n")
     print("Loading model and scaler...")
     model = joblib.load(model_path)
     scaler = joblib.load(scaler_path)

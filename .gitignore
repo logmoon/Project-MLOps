@@ -3,3 +3,5 @@ venv/
 models/*
 .ipynb_checkpoints/
 *.pyc
+mlruns/
+mlflow.db
