@@ -3,101 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <title>Water Potability ML</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
+        * {
+            box-sizing: border-box;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            background: #e6f4ff;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
-            margin: 0;
-            padding: 20px;
         }
 
         .container {
-            background-color: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            margin: 40px 16px;
+            max-width: 900px;
             width: 100%;
-            max-width: 500px;
+            background: #ffffff;
+            border-radius: 18px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            padding: 32px 40px 40px;
+        }
+
+        .header {
             text-align: center;
+            margin-bottom: 24px;
         }
 
-        h1 {
-            margin-bottom: 20px;
-            color: #333;
+        .logo {
+            font-size: 32px;
+            margin-bottom: 4px;
         }
 
-        form {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            margin-top: 15px;
+        .title {
+            font-size: 26px;
+            font-weight: 700;
+            color: #1554b3;
+            margin: 4px 0;
         }
 
-        input[type="text"],
-        input[type="number"],
-        input[type="file"],
-        select {
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+        .subtitle {
             font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        input[type="text"]:focus,
-        input[type="number"]:focus,
-        select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        input[type="submit"],
-        button {
-            padding: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-top: 10px;
-            font-size: 16px;
-            font-weight: bold;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        input[type="submit"]:hover,
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            color: #4f4f4f;
         }
 
         .tabs {
             display: flex;
             justify-content: center;
-            margin-bottom: 20px;
             gap: 10px;
+            margin-bottom: 24px;
+            border-bottom: 2px solid #e6f0ff;
         }
 
         .tab {
-            padding: 10px 20px;
+            padding: 12px 24px;
             cursor: pointer;
             border-bottom: 3px solid transparent;
-            transition: all 0.3s;
+            transition: all 0.2s;
             color: #666;
+            font-weight: 600;
+            font-size: 15px;
         }
 
         .tab.active {
-            font-weight: bold;
-            border-bottom: 3px solid #667eea;
-            color: #667eea;
+            color: #1554b3;
+            border-bottom: 3px solid #1554b3;
         }
 
         .tab:hover {
-            color: #667eea;
+            color: #1554b3;
         }
 
         .tab-content {
@@ -108,34 +87,11 @@
             display: block;
         }
 
-        .prediction {
-            font-weight: bold;
-            margin-top: 15px;
-            font-size: 20px;
-            padding: 15px;
-            border-radius: 8px;
-        }
-
-        .prediction.potable {
-            background-color: #d4edda;
-            color: #155724;
-            border: 2px solid #c3e6cb;
-        }
-
-        .prediction.not-potable {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 2px solid #f5c6cb;
-        }
-
-        .message {
-            margin-top: 15px;
-            font-weight: bold;
-            padding: 15px;
-            border-radius: 8px;
-            background-color: #d1ecf1;
-            color: #0c5460;
-            border: 2px solid #bee5eb;
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 16px;
         }
 
         .form-group {
@@ -144,10 +100,88 @@
 
         .form-group label {
             display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-            color: #555;
+            font-size: 13px;
+            margin-bottom: 6px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="file"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #d0d7e2;
             font-size: 14px;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            border-color: #1f6feb;
+            box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.18);
+        }
+
+        input[type="submit"],
+        button {
+            border: none;
+            border-radius: 999px;
+            padding: 12px 16px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #ffffff;
+            background: linear-gradient(90deg, #0084ff, #00b4ff);
+            box-shadow: 0 6px 16px rgba(0, 132, 255, 0.3);
+            transition: transform 0.08s ease, box-shadow 0.08s ease;
+            margin-top: 8px;
+        }
+
+        input[type="submit"]:hover,
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(0, 132, 255, 0.4);
+        }
+
+        input[type="submit"]:active,
+        button:active {
+            transform: translateY(1px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+        }
+
+        .prediction {
+            margin-top: 20px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .prediction.potable {
+            border: 1px solid #23b26b;
+            background: #e6f8f0;
+            color: #12633d;
+        }
+
+        .prediction.not-potable {
+            border: 1px solid #f55b5b;
+            background: #ffecec;
+            color: #8a1f1f;
+        }
+
+        .message {
+            margin-top: 20px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            background: #f3f6ff;
+            border: 1px solid #d2dcff;
+            color: #1554b3;
+            font-weight: 500;
         }
 
         .checkbox-group {
@@ -155,6 +189,7 @@
             align-items: center;
             gap: 8px;
             justify-content: flex-start;
+            margin-top: 4px;
         }
 
         .checkbox-group input[type="checkbox"] {
@@ -163,29 +198,55 @@
             cursor: pointer;
         }
 
+        .checkbox-group label {
+            margin-bottom: 0 !important;
+            font-weight: 500;
+        }
+
         .form-section {
-            margin-top: 20px;
+            margin-top: 24px;
             padding-top: 20px;
-            border-top: 2px solid #eee;
+            border-top: 2px solid #e6f0ff;
         }
 
         .form-section-title {
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 10px;
+            font-weight: 700;
+            color: #1554b3;
+            margin-bottom: 16px;
             text-align: left;
+            font-size: 16px;
         }
 
         .help-text {
-            font-size: 12px;
-            color: #888;
-            margin-top: 3px;
+            font-size: 11px;
+            color: #777;
+            margin-top: 4px;
+        }
+
+        @media (max-width: 700px) {
+            .container {
+                padding: 24px 20px 28px;
+                margin: 20px 12px;
+            }
+
+            .tabs {
+                gap: 5px;
+            }
+
+            .tab {
+                padding: 10px 16px;
+                font-size: 14px;
+            }
         }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>Water Potability ML</h1>
+    <div class="header">
+        <div class="logo">💧</div>
+        <div class="title">Water Potability ML</div>
+        <div class="subtitle">Machine Learning for Water Quality Analysis</div>
+    </div>
 
     <div class="tabs">
         <div class="tab active" data-tab="predict-tab">Predict</div>
@@ -200,7 +261,7 @@
                        placeholder="{{ feature | replace('_', ' ') | title }}" 
                        required value="{{ values.get(feature, '') }}">
             {% endfor %}
-            <input type="submit" value="🔍 Predict Potability">
+            <input type="submit" value="💧 Predict Potability">
         </form>
         {% if prediction %}
             <div class="prediction {% if '✅' in prediction %}potable{% else %}not-potable{% endif %}">
@@ -270,7 +331,7 @@
                 <div class="form-group checkbox-group">
                     <input type="checkbox" name="engineer_features" 
                            id="engineer_features" checked>
-                    <label for="engineer_features" style="margin-bottom: 0;">
+                    <label for="engineer_features">
                         Enable Feature Engineering
                     </label>
                 </div>

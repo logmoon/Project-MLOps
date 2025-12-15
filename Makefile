@@ -114,3 +114,42 @@ clean:
 # all: install lint format security test full # Full version (with security)
 all: install lint format test full # Skipping security cuz it's screaming at me for no reason.
 	@echo "🎉 Complete CI/Not_CD (yet) executed successfully!"
+
+
+# Docker configuration
+IMAGE_NAME = amenallah_benaissa_4ds8_mlops
+TAG = latest
+
+# Build the Docker image
+docker-build:
+	@echo "🐳 Building Docker image: $(IMAGE_NAME):$(TAG)..."
+	docker build -t $(IMAGE_NAME):$(TAG) .
+	@echo "✅ Docker image built!"
+
+# Run the Docker container
+# Maps port 8000 on host to 8000 on container
+docker-run:
+	@echo "🚀 Running Docker container..."
+	docker run -d -p 8000:8000 --name ml_project_container $(IMAGE_NAME):$(TAG)
+	@echo "✅ Container running! Access at http://localhost:8000"
+
+# Stop the Docker container
+docker-stop:
+	@echo "🛑 Stopping Docker container..."
+	-docker stop ml_project_container
+	-docker rm ml_project_container
+	@echo "✅ Container stopped and removed!"
+
+# Log in to Docker Hub (Interactive)
+docker-login:
+	@echo "🔑 Logging in to Docker Hub..."
+	docker login
+
+# Push the image to Docker Hub
+# Requires 'make docker-login' first
+docker-push:
+	@echo "⬆️ Pushing image to Docker Hub..."
+	@read -p "Enter your Docker Hub username: " username; \
+	docker tag $(IMAGE_NAME):$(TAG) $$username/$(IMAGE_NAME):$(TAG) && \
+	docker push $$username/$(IMAGE_NAME):$(TAG)
+	@echo "✅ Image pushed!"
