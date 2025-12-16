@@ -14,6 +14,8 @@ import joblib
 import os
 import mlflow
 import mlflow.sklearn
+from elasticsearch import Elasticsearch
+from datetime import datetime
 import time
 import json
 import matplotlib.pyplot as plt
@@ -21,6 +23,76 @@ import numpy as np
 
 # Configure MLflow to use SQLite instead of filesystem store
 mlflow.set_tracking_uri("sqlite:///mlflow.db")
+
+# ============================================
+# ELASTICSEARCH CONNECTION
+# ============================================
+def get_elasticsearch_client():
+    """
+    Create and return Elasticsearch client connection
+    
+    Returns:
+        Elasticsearch: Connected ES client or None if connection fails
+    """
+    try:
+        es = Elasticsearch(
+            hosts=["http://localhost:9200"],
+            verify_certs=False,
+            ssl_show_warn=False
+        )
+        if es.ping():
+            print("Connected to Elasticsearch!")
+            return es
+        else:
+            print("Failed to connect to Elasticsearch")
+            return None
+    except Exception as e:
+        print(f"⚠️ Elasticsearch connection error: {e}")
+        return None
+
+# Initialize global ES client
+es_client = get_elasticsearch_client()
+
+def log_to_elasticsearch(run_id, metrics, params, tags=None, model_name="water_potability"):
+    """
+    Send MLflow run data to Elasticsearch
+    
+    Args:
+        run_id (str): MLflow run ID
+        metrics (dict): Model metrics (accuracy, precision, etc.)
+        params (dict): Model parameters and hyperparameters
+        tags (dict): Additional tags for the run
+        model_name (str): Name of the model
+    
+    Returns:
+        bool: True if successfully logged, False otherwise
+    """
+    if es_client is None:
+        print("⚠️ Elasticsearch not connected, skipping logging")
+        return False
+    
+    try:
+        document = {
+            "run_id": run_id,
+            "timestamp": datetime.now().isoformat(),
+            "model_name": model_name,
+            "metrics": metrics,
+            "params": params,
+            "tags": tags or {}
+        }
+        
+        response = es_client.index(
+            index="mlflow-metrics",
+            document=document
+        )
+        
+        print(f"Logged to Elasticsearch: {response['result']}")
+        return True
+        
+    except Exception as e:
+        print(f"⚠️ Failed to log to Elasticsearch: {e}")
+        return False
+
 
 def prepare_data(dataset_path, 
                  missing_value_strategy="median",
@@ -157,7 +229,7 @@ def train_and_log(
     run_source="cli"
 ):
     """
-    Train model and log params/metrics/artifacts to MLflow.
+    Train model and log params/metrics/artifacts to MLflow AND Elasticsearch.
 
     Args:
         run_source (str): Source of the run - "cli", "api", "notebook", etc.
@@ -203,10 +275,53 @@ def train_and_log(
         # Predict and log metrics
         y_pred = model.predict(X_test)
         acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred)
+        rec = recall_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+        
         mlflow.log_metric("accuracy", float(acc))
-        mlflow.log_metric("precision", precision_score(y_test, y_pred))
-        mlflow.log_metric("recall", recall_score(y_test, y_pred))
-        mlflow.log_metric("f1", f1_score(y_test, y_pred))
+        mlflow.log_metric("precision", prec)
+        mlflow.log_metric("recall", rec)
+        mlflow.log_metric("f1", f1)
+
+        # ============================================
+        # SEND TO ELASTICSEARCH
+        # ============================================
+        metrics_dict = {
+            "accuracy": float(acc),
+            "precision": float(prec),
+            "recall": float(rec),
+            "f1_score": float(f1)
+        }
+        
+        params_dict = {
+            "dataset": dataset_path,
+            "test_size": test_size,
+            "random_state": random_state,
+            "scaler": type(scaler).__name__,
+            "missing_value_strategy": missing_value_strategy,
+            "engineer_features": len(engineered_features) > 0,
+            "engineered_features": ",".join(engineered_features) if engineered_features else "none",
+            "outlier_method": outlier_method if outlier_method else "none",
+            "outlier_threshold": outlier_threshold,
+            "algorithm": "GaussianNB",
+            "var_smoothing": var_smoothing
+        }
+        
+        tags_dict = {
+            "source": run_source,
+            "model_type": "GaussianNB",
+            "experiment": experiment_name
+        }
+        
+        log_to_elasticsearch(
+            run_id=run_id,
+            metrics=metrics_dict,
+            params=params_dict,
+            tags=tags_dict,
+            model_name="water_potability"
+        )
+        # ============================================
 
         # Log confusion matrix as image
         fig, ax = plt.subplots()

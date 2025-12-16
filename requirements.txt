@@ -13,3 +13,4 @@ flake8
 black
 bandit
 pytest
+elasticsearch==8.11.0
